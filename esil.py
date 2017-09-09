@@ -136,10 +136,21 @@ class ESILVM(object):
             'of': zero(), 'df': zero()
         }
 
+        self.eflags = z3.BitVec('eflags', BITS)
+
         self.esil_flags = {
             '$z': zero(), '$b': zero(), '$c': zero(),
             '$o': zero(), '$p': zero(), '$r': zero(),
             '$s': zero()
+        }
+
+        self.segment_registers = {
+            'cs': z3.BitVec('cs', BITS),
+            'ds': z3.BitVec('ds', BITS),
+            'ss': z3.BitVec('ss', BITS),
+            'es': z3.BitVec('es', BITS),
+            'fs': z3.BitVec('fs', BITS),
+            'gs': z3.BitVec('gs', BITS)
         }
 
         self.x86_stack = []
@@ -270,6 +281,7 @@ class ESILVM(object):
         self.__mem_var_cnt = 0
         self.__unk_var_cnt = 0
 
+
     def pop(self):
         return self.__stack.pop()
 
@@ -320,6 +332,12 @@ class ESILVM(object):
     def __is_ESIL_flag(self, x):
         return isinstance(x, str) and x.startswith('$') and x != '$' and x != '$$'
 
+    def __is_segment_register(self, x):
+        return isinstance(x, str) and x in self.segment_registers
+
+    def __is_eflags(self, x):
+        return isinstance(x, str) and x == 'eflags'
+    
     def __is_ESIL_flag_value(self, x):
         return isinstance(x, str) and ESIL_FLAG_VALUE_REGEX.match(x)
 
@@ -330,6 +348,8 @@ class ESILVM(object):
             return self.esil_flags.get(x, zero())
         if self.__is_x86_flag(x):
             return self.x86_flags[x]
+        if self.__is_eflags(x):
+            return self.eflags
         return x
 
     def __new_unk_var(self):
@@ -366,8 +386,10 @@ class ESILVM(object):
         else:
             # Probably a memory address
             autolog('{0}, {1}'.format(dst, x))
+            
             # self.write_mem(dst, x, 4)
             for addr, value in self.memory.iteritems():
+                
                 if value == dst:
                     self.write_mem(addr, x, 4)
 
@@ -455,7 +477,8 @@ class ESILVM(object):
         autolog(expr)
         for op in expr.split(','):
             if self.__is_register(op)  or self.__is_x86_flag(op) \
-               or self.__is_ESIL_flag(op) or self.__is_ESIL_flag_value(op):
+               or self.__is_ESIL_flag(op) or self.__is_ESIL_flag_value(op)\
+               or self.__is_segment_register(op) or self.__is_eflags(op):
                 self.push(op)
             elif op in self.instr_table:
                 self.instr_table[op]()
@@ -542,6 +565,9 @@ class ESILVM(object):
         # We want to keep ebp symbolic value
         if self.__is_register(dst) and dst == 'ebp' and \
            self.__is_register(src) and src == 'esp':
+            return
+
+        if self.__is_eflags(dst):
             return
         
         x = self.__resolve(src)
